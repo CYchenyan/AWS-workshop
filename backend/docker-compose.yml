@@ -18,16 +18,21 @@ services:
     build:
       context: ./
     ports:
-      - "8001:8001"
+      - "8000:8000"
     command: npm run start
     environment:
       - DATABASE_DB=blog_db
       - DATABASE_USER=root
       - DATABASE_PASSWORD=/run/secrets/db-password
-      - DATABASE_HOST=db
+      - DATABASE_HOST=blog-db
       - NODE_ENV=development
     secrets:
       - db-password
+    volumes:
+      - ./src:/app/src
+      - ./backend/package.json:/code/package.json
+      - ./backend/package-lock.json:/code/package-lock.json
+      - back-notused:/opt/app/node_modules
     networks:
       - public
       - private
@@ -59,4 +64,4 @@ volumes:
   db-data:
 secrets:
   db-password:
-    file: ./db-password.txt
+    file: ./src/db-password.txt

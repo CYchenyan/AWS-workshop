@@ -9,6 +9,9 @@ RUN npm install
 
 COPY . ./
 
-EXPOSE 8001
+HEALTHCHECK --interval=30s \
+CMD ["node", 'healthcheck.js']
+
+EXPOSE 8000
 
 CMD ["npm", "start"]
