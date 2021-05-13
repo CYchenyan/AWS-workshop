@@ -1,7 +1,5 @@
 
 .idea/
-backend/.idea/
-backend/node_modules/
-web/.gitignore
-web/node_modules/
-web/.idea/
+**/.idea/
+**/node_modules/
+**/.gitignore
