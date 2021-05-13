@@ -1,0 +1,8 @@
+1. 简述 kubectl logs / describe / apply / delete 命令的功能
+kubectl api documentation： https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands#logs
+kubectl: 管理 Kubernetes 集群，在 $HOME/.kube 目录中查找一个名为 config 的配置文件
+         在终端中运行命令的格式：kubectl [command] [TYPE] [NAME] [flags]
+kubectl logs: 打印pod或指定资源的日志，如果pod中只部署了单个container，container name 可省略
+kubectl describe: 打印所选资源的详细信息
+kubectl apply: 通过filenames或stdin将配置应用到资源
+kubectl delete: 通过filenames, stdin, resources and names、 resources 、 label selector 删除资源
