@@ -84,7 +84,7 @@ aws kms decrypt \
 --decode > decryptedFile1
 
 ```
-
+***Errors: ***
 ***![Error:](https://github.com/CYchenyan/AWS-workshop/blob/main/kms/decryptError.png)***
 
 ___解决：base64加密后，在解密前应该先用base64解密___
