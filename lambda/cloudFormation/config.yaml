@@ -1,21 +1,57 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda function with cfn-response.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Lambda function with cfn-response."
 Resources:
-  primer:
+  lambdaInstance:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: rabitLambda
       Runtime: nodejs12.x
-      Role: arn:aws:iam::160071257600:role/service-role/rabit-cli-function-role-c60nm0au
+      Role: !GetAtt iamRole.Arn
       Handler: index.handler
       Code:
         ZipFile: |
           var aws = require('aws-sdk')
           var response = require('cfn-response')
           exports.handler = function(event, context) {
-              console.log("ENVIRONMENT VARIABLES\n" + JSON.stringify(process.env, null, 2))
-              console.log("EVENT\n" + JSON.stringify(event, null, 2))
-          return context.logStreamName
+             console.log("Request Received:\n" + JSON.stringify*(event))
+             // For Delete requests, immediately send a SUCCESS response.
+             if(event.RequestType == "Delete"){
+              response.send(event, context, "SUCCESS")
+              return
+             }
+
+             var responseStatus = "FAILED"
+             var responseData = {}
+             var functionName = event.ResourceProperties.functionName
+             var lambda = new aws.Lambda()
+             lambda.invoke({FunctionName: functionName}, function(err, invokeResult){
+                if(err) {
+                  responseData = { Error: "Invoke call failed" }
+                  console.log(responseData.Error + ":\n", err)
+                }
+                else responseStatus = 'SUCCESS'
+                response.send(event, context, responseStatus, responseData)
+             })
           }
       Description: deploy lambda function.
       TracingConfig:
         Mode: Active
+  iamRole:
+    Description: Create IAM role for lambda resource
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: rabit-lambda-role
+      Description: "Role for lambda invoke"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Id: cy112233
+        Statement:
+          - Sid: LambdaAllowFunctionInvoke
+            Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: lambda.amazonaws.com
