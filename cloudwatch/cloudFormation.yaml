@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudWatch and Lambda "
+Parameters:
+  NotificationEmail:
+    Type: String
+    Default: yan.chen@thoughtworks.com
+  FunctionName:
+    Type: String
+    Default: bukiLambda
+  NameSpace:
+    Type: String
+    Default: bukiNamespace
+Resources:
+  lambdaInstance:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: nodejs12.x
+      Role: !GetAtt bukiRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          const CloudWatch = require('aws-sdk/clients/cloudwatch')
+          const cw = new CloudWatch()
+          exports.handler = async (event) => {
+          let params = {
+            MetricData: [],
+            Namespace: 'bukiNamespace'
+          }
+          console.log("event", event)
+          const value = event.detail.value || 40
+
+          params.MetricData.push({
+              MetricName: 'wait-times',
+              Dimensions: [
+                {'Name':'Type', 'Value': 'time' }
+              ],
+              Unit: 'Seconds',
+              Value: value
+            })
+            console. log(await cw.putMetricData(params).promise())
+          }
+      Description: deploy lambda function.
+      TracingConfig:
+        Mode: Active
+  bukiRole:
+    Description: Create IAM role for lambda and cloudwatch resource
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: bukit-lambda-role
+      Description: "Role for lambda invoke"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Id: cy112233
+        Statement:
+          - Sid: LambdaAllowFunctionInvoke
+            Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: 
+                - lambda.amazonaws.com
+      Policies:
+        - PolicyName: cloudwatchPutMetricDataPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+  cloudwatchRuleInvokeLambdaEveryMinute:
+    Description: 'Create cloudwatch rule invoke lambda'
+    Type: AWS::Events::Rule
+    Properties:
+      Name: CY-schedule
+      Description: 'Invoke lambda'
+      State: ENABLED
+      ScheduleExpression: rate(1 minute)
+      EventPattern:
+        detail-type:
+          - CloudWatch schedule invoke lambda notification
+        detail:
+          waitTime:
+            - 40
+      Targets:
+        - Arn: !GetAtt lambdaInstance.Arn
+          Id: 'buki-invoke-lambda'
+  lambdaPermissions:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FunctionName
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt cloudwatchRuleInvokeLambdaEveryMinute.Arn
+  waitTimeTooLongAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alarm when wait time more than 40 seconds
+      AlarmName: bukiWaitTimeMoreThan40s
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Type
+          Value: time
+      MetricName: bukiInvokeLambdaWaitTime
+      Namespace: !Ref NameSpace
+      Period: 300
+      EvaluationPeriods: 1
+      Statistic: Average
+      Threshold: 40
+      AlarmActions:
+        - !Ref snsTopic
+  snsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: bukiAlarmTopic
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+      TopicName: bukiSNSTopic
+  bukiQueryDefinition:
+    Type: AWS::Logs::QueryDefinition
+    Properties:
+      Name: bukiQueryName
+      QueryString: "fields @timestamp, @message | sort @timestamp desc | limit 20"
+  ErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref NameSpace
+      FilterPattern: "[timestamp, message, ERROR]"
+      MetricTransformations: 
+        - MetricValue: "1"
+          MetricNamespace: bukiNamespace2
+          MetricName: ErrorMetricName
