@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: SNS and SQS trigger lambda
+Parameters:
+  Email:
+    Type: String
+    Default: yan.chen@thoughtworks.com
+  SNSTrigerLambda:
+    Type: String
+    Default: CYSNSTriggerLambda
+  SQSTrigerLambda:
+    Type: String
+    Default: CYSQSTriggerLambda
+Resources:
+  CYTopic:
+    Type: AWS::SNS::Topic
+    DeletionPolicy: Delete
+    Properties:
+      TopicName: CYTopic
+      Subscription:
+        - Endpoint: !GetAtt CYLambdaTriggeredBySNS.Arn
+          Protocol: LAMBDA
+        - Endpoint: !Ref Email
+          Protocol: Email
+        - Endpoint: !GetAtt CYQueue.Arn
+          Protocol: SQS
+
+  CYQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    Properties:
+      QueueName: CYQueue
+      VisibilityTimeout: 150
+      MessageRetentionPeriod: 604800
+
+  CYLambdaTriggeredBySNS:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    Properties:
+      FunctionName: !Ref SNSTrigerLambda
+      Runtime: nodejs12.x
+      Role: !GetAtt CYRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          console.log('Loading function');
+
+          exports.handler = async (event, context) => {
+              //console.log('Received event:', JSON.stringify(event, null, 2));
+              const message = event.Records[0].Sns.Message;
+              console.log('From SNS:', message);
+              return message;
+          };
+      Description: SNS trigger lambda
+      TracingConfig:
+        Mode: Active
+
+  CYLambdaTriggeredBySQS:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Delete
+    Properties:
+      FunctionName: !Ref SQSTrigerLambda
+      Runtime: nodejs12.x
+      Role: !GetAtt CYRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          console.log('Loading function');
+
+          exports.handler = async (event) => {
+              //console.log('Received event:', JSON.stringify(event, null, 2));
+              for (const { messageId, body } of event.Records) {
+                  console.log('SQS message %s: %j', messageId, body);
+              }
+              return `Successfully processed ${event.Records.length} messages.`;
+          };
+      Description: SQS trigger lambda
+      TracingConfig:
+        Mode: Active
+
+  schduleInvokeTopicEvery5Minutes:
+    Type: AWS::Events::Rule
+    DeletionPolicy: Delete
+    Properties:
+      Name: CYSchdule
+      State: ENABLED
+      ScheduleExpression: rate(5 minutes)
+      Targets:
+        - Arn: !Ref CYTopic
+          Id: schdule-invoke-topic-id
+
+  lambdaEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    DeletionPolicy: Delete
+    Properties:
+      FunctionName: !GetAtt CYLambdaTriggeredBySQS.Arn
+      Enabled: true
+      EventSourceArn: !GetAtt CYQueue.Arn
+      BatchSize: 10
+
+  CYRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      RoleName: CYRole
+      # ManagedPolicyArns:
+      #   - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      #   - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Id: CY
+        Statement:
+          - Sid: CYAssumeRole
+            Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Policies:
+        - PolicyName: CYRoot
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource: '*'
+
+  snsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    DeletionPolicy: Delete
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CYLambdaTriggeredBySNS
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref CYTopic
+
+  CYTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    DeletionPolicy: Delete
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: '*'
+      Topics:
+        - !Ref CYTopic
+
+  CYQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    DeletionPolicy: Delete
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: 
+              - SQS:SendMessage
+              - SQS:ReceiveMessage
+            Effect: Allow
+            Resource: '*'
+            Principal: '*'
+      Queues:
+        - !Ref CYQueue
